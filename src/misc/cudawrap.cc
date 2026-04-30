@@ -44,9 +44,15 @@ error:
 }
 
 int ncclCuMemEnable() {
+#ifdef NCCL_OS_WINDOWS
+  // cuMem VMM APIs (cuMemCreate, cuMemMap, etc.) are not functional under
+  // the WDDM driver model used on Windows.  Unconditionally disable.
+  return 0;
+#else
   // NCCL_CUMEM_ENABLE=-2 means auto-detect CUMEM support
   int param = ncclParamCuMemEnable();
   return  param >= 0 ? param : (param == -2 && ncclCuMemSupported);
+#endif
 }
 
 static int ncclCumemHostEnable = -1;
