@@ -1,3 +1,7 @@
+# NCCL for Windows
+
+Follow the build instructions on [nccl-windows](https://github.com/SystemPanic/nccl-windows/tree/nccl-windows#building-from-source) branch.
+
 # NCCL
 
 Optimized primitives for inter-GPU communication.
