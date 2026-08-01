@@ -1,14 +1,35 @@
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 from Cython.Build import cythonize
 from setuptools import setup, Extension
 
 
+IS_WINDOWS = sys.platform == "win32"
+
+# Platform-specific build knobs.
+#   - There is no libdl on Windows; the loader uses LoadLibrary/GetProcAddress
+#     out of kernel32, which MSVC links by default.
+#   - MSVC spells the standard switch /std:c++14, not -std=c++14.
+#   - The internal loader has one implementation per platform; see
+#     tools/generate_nccl_windows_pyx.py for how nccl_windows.pyx is produced.
+if IS_WINDOWS:
+    PLATFORM_LIBRARIES = []
+    PLATFORM_COMPILE_ARGS = ["/std:c++14", "/EHsc"]
+    LOADER_SUFFIX = "windows"
+else:
+    PLATFORM_LIBRARIES = ["dl"]
+    PLATFORM_COMPILE_ARGS = ["-std=c++14"]
+    LOADER_SUFFIX = "linux"
+
 # Check CUDA_HOME is set and is a valid directory
 CUDA_HOME = os.environ.get("CUDA_HOME")
+if not CUDA_HOME:
+    # On Windows the CUDA Toolkit installer sets CUDA_PATH, not CUDA_HOME.
+    CUDA_HOME = os.environ.get("CUDA_PATH")
 if not CUDA_HOME:
     raise SystemExit("Error: CUDA_HOME is not set")
 
@@ -33,8 +54,8 @@ def calculate_modules(module: str):
         sources=[lowpp_pyx],
         include_dirs=[CUDA_INC],
         language="c++",
-        extra_compile_args=["-std=c++14"],
-        libraries=["dl"],
+        extra_compile_args=PLATFORM_COMPILE_ARGS,
+        libraries=PLATFORM_LIBRARIES,
     )
 
     # cy variant: nccl.bindings.nccl -> nccl/bindings/cynccl.pyx
@@ -47,22 +68,22 @@ def calculate_modules(module: str):
         sources=[cy_mod_pyx],
         include_dirs=[CUDA_INC],
         language="c++",
-        extra_compile_args=["-std=c++14"],
-        libraries=["dl"],
+        extra_compile_args=PLATFORM_COMPILE_ARGS,
+        libraries=PLATFORM_LIBRARIES,
     )
 
-    # internal variant: source is nccl_linux.pyx, but published module name is nccl.bindings._internal.nccl
+    # internal variant: source is nccl_<platform>.pyx, but published module name is nccl.bindings._internal.nccl
     inter_mod = module_parts.copy()
     inter_mod.insert(-1, "_internal")
-    inter_mod_pyx = os.path.join(*inter_mod[:-1], f"{inter_mod[-1]}_linux.pyx")
+    inter_mod_pyx = os.path.join(*inter_mod[:-1], f"{inter_mod[-1]}_{LOADER_SUFFIX}.pyx")
     inter_mod = ".".join(inter_mod)
     inter_ext = Extension(
         inter_mod,
         sources=[inter_mod_pyx],
         include_dirs=[CUDA_INC],
         language="c++",
-        extra_compile_args=["-std=c++14"],
-        libraries=["dl"],
+        extra_compile_args=PLATFORM_COMPILE_ARGS,
+        libraries=PLATFORM_LIBRARIES,
     )
 
     # internal variant: insert _internal and use utils.pyx
@@ -76,8 +97,8 @@ def calculate_modules(module: str):
         sources=[inter_utils_mod_pyx],
         include_dirs=[CUDA_INC],
         language="c++",
-        extra_compile_args=["-std=c++14"],
-        libraries=["dl"],
+        extra_compile_args=PLATFORM_COMPILE_ARGS,
+        libraries=PLATFORM_LIBRARIES,
     )
 
     return lowpp_ext, cy_ext, inter_ext, inter_utils_ext
